@@ -91,7 +91,12 @@ def fetch(url: str) -> Optional[str]:
         time.sleep(REQUEST_DELAY_SECONDS)
 
 
-PRICE_RE = re.compile(r"\$\s?[\d,]{3,12}(?:\.\d{2})?")
+PRICE_RE = re.compile(
+    r"\$\s?\d{1,3}(?:\.\d{1,2})?\s?[kKmM]\b"  # e.g. $275K, $85K, $1.2M
+    r"|\$\s?[\d,]{3,12}(?:\.\d{2})?"  # e.g. $149,500
+)
+_PRICE_SUFFIX_RE = re.compile(r"\$\s?(\d{1,3}(?:\.\d{1,2})?)\s?([kKmM])\b")
+_PRICE_SUFFIX_MULTIPLIERS = {"k": 1_000, "m": 1_000_000}
 STATE_ABBRS = (
     "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT "
     "NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC"
@@ -108,7 +113,16 @@ DATE_LABEL_RE = re.compile(
 
 def extract_price(text: str) -> str:
     m = PRICE_RE.search(text)
-    return m.group(0).strip() if m else "Contact for price"
+    if not m:
+        return "Contact for price"
+    raw = m.group(0).strip()
+    # "$275K" means $275,000, not two hundred seventy-five dollars - expand
+    # the abbreviated K/M suffix into the full number instead of truncating it.
+    suffix_match = _PRICE_SUFFIX_RE.fullmatch(raw)
+    if suffix_match:
+        value = float(suffix_match.group(1)) * _PRICE_SUFFIX_MULTIPLIERS[suffix_match.group(2).lower()]
+        return f"${value:,.0f}"
+    return raw
 
 
 def extract_location(text: str) -> str:
@@ -165,8 +179,10 @@ EXCLUDE_KEYWORDS = [
     "parts", "part", "wing", "wings", "wheel", "wheels", "float", "floats",
     "strut", "struts", "gear leg", "gear legs", "landing gear",
     "engine mount", "engine mounts", "prop", "props", "propeller",
-    "propellers", "cowl", "cowling", "cowlings", "tail cone", "elevator",
+    "propellers", "cowl", "cowling", "cowlings", "fairing", "fairings",
+    "tail cone", "elevator",
     "rudder", "aileron", "ailerons", "flap", "flaps", "tank", "tanks",
+    "cooler", "coolers", "oil cooler", "oil coolers",
     "spinner", "spinners", "hinge", "hinges", "cushion", "cushions",
     "seat", "seats", "door", "doors", "window", "windows", "carburetor",
     "magneto", "magnetos", "battery", "starter", "alternator",
